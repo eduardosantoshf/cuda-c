@@ -6,8 +6,6 @@
 
 void readData(char *fileName, double **matrixArray, int *order, int *amount);
 
-double column_by_column_determinant(int order,  double *matrix);
-
 double row_by_row_determinant(int order, double *matrix);
 
 #endif
