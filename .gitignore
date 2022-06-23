@@ -287,4 +287,4 @@ xcuserdata/
 
 # End of https://www.toptal.com/developers/gitignore/api/cuda
 .vscode
-prog2/computeDet_large
+computeDet_large
