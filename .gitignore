@@ -207,7 +207,8 @@ _deps
 .LSOverride
 
 # Icon must end with two \r
-Icon
+Icon
+
 
 # Thumbnails
 ._*
@@ -287,4 +288,7 @@ xcuserdata/
 
 # End of https://www.toptal.com/developers/gitignore/api/cuda
 .vscode
-computeDet_large
+computeDet/mat512_32.bin
+computeDet/mat512_64.bin
+computeDet/mat512_128.bin
+computeDet/mat512_256.bin
