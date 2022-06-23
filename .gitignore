@@ -286,3 +286,5 @@ xcuserdata/
 *.fatbin
 
 # End of https://www.toptal.com/developers/gitignore/api/cuda
+.vscode
+prog2/computeDet_large
