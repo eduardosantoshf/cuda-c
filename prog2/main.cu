@@ -32,16 +32,20 @@ __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResult
  */
 void readData(char *fileName, double **matrixArray, int *order, int *amount);
 
-// process the called command
+/**
+ * @brief Process the called command
+ */
 static int processCommand(int argc, char *argv[], int* , char*** fileNames);
 
-// print the explanation of how to use the command
+/**
+ * @brief Print the explanation of how to use the command
+ */
 static void printUsage(char *cmdName);
 
 /**
- * @brief Main logic of the program.
+ * @brief Main logic of the solution
  *
- * @param argc amount of arguments in the command line
+ * @param argc amount arguments in the command line
  * @param argv arguments from the command line
  * @return int execution status of operation
  */
@@ -63,7 +67,7 @@ int main(int argc, char **argv) {
     int dev = 0;
     cudaDeviceProp deviceProp;
     CHECK(cudaGetDeviceProperties(&deviceProp, dev));
-    printf("Using Device %d: %s\n", dev, deviceProp.name);
+    printf("\nUsing Device %d: %s\n", dev, deviceProp.name);
     CHECK(cudaSetDevice(dev));
 
     // process files
@@ -95,11 +99,11 @@ int main(int argc, char **argv) {
         double deviceStart = seconds();
 
         computeDeterminantGPU<<<grid, block>>>(deviceMatrix, deviceResults);
-        CHECK(cudaDeviceSynchronize ());
+        CHECK(cudaDeviceSynchronize());
 
         double deviceTime = seconds() - deviceStart;
 
-        CHECK(cudaGetLastError ()); // check kernel errors
+        CHECK(cudaGetLastError()); // check kernel errors
         CHECK(cudaMemcpy(retrievedResults, deviceResults, sizeof(double) * amount, cudaMemcpyDeviceToHost)); // return results
         CHECK(cudaFree (deviceMatrix)); // free device memory
 
@@ -111,7 +115,7 @@ int main(int argc, char **argv) {
 
         double hostTime = seconds() - hostStart;
 
-        printf("\nResults");
+        printf("\nResults:\n");
 
         for(int i = 0; i < amount; i++) {
             printf("\nMatrix nº %d", i + 1);
@@ -127,7 +131,7 @@ int main(int argc, char **argv) {
 }
 
 /**
- * @brief Calculates determinant row by row
+ * @brief Computes the determinant row by row on the host
  *
  * @param matrix pointer to matrix
  * @param order order of matrix
@@ -138,16 +142,15 @@ void computeDeterminantHost(int order, int amount, double **matrix, double *resu
 }
 
 /**
- * @brief Device kernel to calculate gaussian elimination, row by row
+ * @brief Computes the determinant row by row on the GPU
  *
- * @param deviceMatrix pointer to array of matrices
- * @param deviceResults pointer to array of results
+ * @param deviceMatrix matrices array
+ * @param deviceResults results array
  */
 __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResults) {
     int n = blockDim.x;
 
 	for (int iteration = 0; iteration < n; iteration++) {
-   
         if (threadIdx.x < iteration) 
             continue;
 
@@ -176,39 +179,39 @@ __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResult
 }
 
 /**
- * @brief Reads all the matrixes from a give file.
+ * @brief Read matrices data from a file
  *
- * @param fileName name of the file
- * @param matrixArray pointer to array of matrices
- * @param order order of the matrices
- * @param amount total amount of matrices
+ * @param fileName filename
+ * @param matrixArray matrices array
+ * @param order matrices order
+ * @param amount number of matrices
  */
 void readData(char *fileName, double **matrixArray, int *order, int *amount) {
     FILE *f = fopen(fileName, "rb");
     
-    if(!f) {
+    if (!f) {
         perror("error opening file");
         exit(EXIT_FAILURE);
     }
 
-    if(!fread(amount, sizeof(int), 1, f)) {
+    if (!fread(amount, sizeof(int), 1, f)) {
         perror("error reading amount of matrixes");
         exit(EXIT_FAILURE);
     }
 
-    if(!fread(order, sizeof(int), 1, f)) {
+    if (!fread(order, sizeof(int), 1, f)) {
         perror("error reading order of matrixes");
         exit(EXIT_FAILURE);
     }
 
     (*matrixArray) = (double*)malloc(sizeof(double) * (*amount) * (*order) * (*order));
     
-    if(!(*matrixArray)) {
+    if (!(*matrixArray)) {
         perror("error allocating memory for matrixes");
         exit(EXIT_FAILURE);
     }
 
-    if(!fread((*matrixArray), sizeof(double), (*amount) * (*order) * (*order), f)) {
+    if (!fread((*matrixArray), sizeof(double), (*amount) * (*order) * (*order), f)) {
         perror("error reading all the matrixes");
         exit(EXIT_FAILURE);
     }
