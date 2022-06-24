@@ -1,47 +1,4 @@
-#include "utils.cuh"
-
-/**
- * @brief Reads all the matrixes from a give file.
- *
- * @param fileName name of the file
- * @param matrixArray pointer to array of matrices
- * @param order order of the matrices
- * @param amount total amount of matrices
- */
-void readData(char *fileName, double **matrixArray, int *order, int *amount)
-{
-    FILE *f = fopen(strcat(strdup("../computeDet/"), fileName), "rb");
-    if(!f)
-    {
-        perror("error opening file");
-        exit(EXIT_FAILURE);
-    }
-
-    if(!fread(amount, sizeof(int), 1, f))
-    {
-        perror("error reading amount of matrixes");
-        exit(EXIT_FAILURE);
-    }
-
-    if(!fread(order, sizeof(int), 1, f))
-    {
-        perror("error reading order of matrixes");
-        exit(EXIT_FAILURE);
-    }
-
-    (*matrixArray) = (double*)malloc(sizeof(double) * (*amount) * (*order) * (*order));
-    if(!(*matrixArray))
-    {
-        perror("error allocating memory for matrixes");
-        exit(EXIT_FAILURE);
-    }
-
-    if(!fread((*matrixArray), sizeof(double), (*amount) * (*order) * (*order), f))
-    {
-        perror("error reading all the matrixes");
-        exit(EXIT_FAILURE);
-    }
-}
+#include "computeDeterminant.cuh"
 
 /**
  * @brief Calculates the determinant of a square matrix using Gaussian Elimination
@@ -52,7 +9,7 @@ void readData(char *fileName, double **matrixArray, int *order, int *amount)
  * @param matrix the matrix of 1 Dimension with the length of "order" * "order"
  * @return double value of the determinant
  */
-double row_by_row_determinant(int order,  double *matrix)
+double computeDeterminant(int order,  double *matrix)
 {
     double det = 1;
     double pivotElement;

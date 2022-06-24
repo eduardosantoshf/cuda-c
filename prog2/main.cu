@@ -3,9 +3,11 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <unistd.h>
+#include <libgen.h>
 
 #include "../common/common.h"
-#include "utils/utils.cuh"
+#include "computeDeterminant.cuh"
 
 #ifndef SECTOR_SIZE
 # define SECTOR_SIZE  512
@@ -16,14 +18,19 @@
 #endif
 
 /**
- * @brief Host processing logic, row by row.
+ * @brief Host processing logic
  */
-void hostRR(int order, int amount, double **matrixArray, double *results);
+void computeDeterminantHost(int order, int amount, double **matrix, double *results);
 
 /**
- * @brief Device processing logic, row by row.
+ * @brief GPU processing logic
  */
-__global__ void deviceRR(double *d_matrixArray, double *d_results);
+__global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResults);
+
+/**
+ * @brief Read data from files
+ */
+void readData(char *fileName, double **matrixArray, int *order, int *amount);
 
 // process the called command
 static int processCommand(int argc, char *argv[], int* , char*** fileNames);
@@ -33,24 +40,21 @@ static void printUsage(char *cmdName);
 
 /**
  * @brief Main logic of the program.
- * Makes gaussian elimination on the host and the device.
- * Compares thre obtained results at the end.
  *
  * @param argc amount of arguments in the command line
- * @param argv array with the arguments from the command line
- * @return int return execution status of operation
+ * @param argv arguments from the command line
+ * @return int execution status of operation
  */
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     // process command line information to obtain file names
     int fileAmount = 0;
     char ** fileNames;
-    int command_result;
+    int commandResult;
 
     // process the command and act according to it
-    command_result = process_command(argc, argv, &fileAmount, &fileNames);
+    commandResult = processCommand(argc, argv, &fileAmount, &fileNames);
 
-    if (command_result != EXIT_SUCCESS) {
+    if (commandResult != EXIT_SUCCESS) {
         perror("There was an error processing the input");
         exit(EXIT_FAILURE);
     }
@@ -63,54 +67,60 @@ int main(int argc, char **argv)
     CHECK(cudaSetDevice(dev));
 
     // process files
-    double *h_matrixArray = NULL;
+    double *hostMatrix = NULL;
     int order = 0, amount = 0;
-    for(int i = 0; i < fileAmount; i++)
-    {
+    
+    for (int i = 0; i < fileAmount; i++) {
         // read data from file
-        readData(*(fileNames + i), &h_matrixArray, &order, &amount);
+        readData(*(fileNames + i), &hostMatrix, &order, &amount);
 
         // structure to save results
-        double *retrieved_results = (double *)malloc(sizeof(double) * amount);
+        double *retrievedResults = (double *)malloc(sizeof(double) * amount);
 
-        // allocate memory on device
-        double *d_matrixArray;
-        double *d_results;
-        CHECK(cudaMalloc((void **)&d_matrixArray, (sizeof(double) * order * order * amount)));
-        CHECK(cudaMalloc((void **)&d_results, sizeof(double) * amount));
+        double *deviceMatrix;
+        double *deviceResults;
+        
+        // allocate memory
+        CHECK(cudaMalloc((void **)&deviceMatrix, (sizeof(double) * order * order * amount)));
+        CHECK(cudaMalloc((void **)&deviceResults, sizeof(double) * amount));
 
         // copy data to device memory
-        CHECK(cudaMemcpy(d_matrixArray, h_matrixArray, (sizeof(double) * order * order * amount), cudaMemcpyHostToDevice));
+        CHECK(cudaMemcpy(deviceMatrix, hostMatrix, (sizeof(double) * order * order * amount), cudaMemcpyHostToDevice));
 
         // create grid and block
         dim3 grid(amount, 1, 1);
         dim3 block(order, 1, 1);
 
-        // DEVICE PROCESSING
-        double d_start = seconds();
-        deviceRR<<<grid, block>>>(d_matrixArray, d_results);
-        CHECK (cudaDeviceSynchronize ());
-        double drr = seconds() - d_start;
+        // process on device
+        double deviceStart = seconds();
 
-        CHECK(cudaGetLastError ());         // check kernel errors
-        CHECK(cudaMemcpy(retrieved_results, d_results, sizeof(double) * amount, cudaMemcpyDeviceToHost));   // return obtained results
-        CHECK(cudaFree (d_matrixArray));    // free device memory
+        computeDeterminantGPU<<<grid, block>>>(deviceMatrix, deviceResults);
+        CHECK(cudaDeviceSynchronize ());
 
-        // HOST PROCESSING
-        double h_results[amount];
-        double start = seconds();
-        hostRR(order, amount, &h_matrixArray, h_results);
-        double hrr = seconds() - start;
+        double deviceTime = seconds() - deviceStart;
 
-        printf("\nRESULTS\n");
-        for(int i = 0; i < amount; i++)
-        {
-            printf("MATRIX: <%d>\tHOST: <%+5.3e>\t DEVICE: <%+5.3e>\n", i + 1, h_results[i], retrieved_results[i]);
+        CHECK(cudaGetLastError ()); // check kernel errors
+        CHECK(cudaMemcpy(retrievedResults, deviceResults, sizeof(double) * amount, cudaMemcpyDeviceToHost)); // return results
+        CHECK(cudaFree (deviceMatrix)); // free device memory
+
+        // process on host
+        double hostResults[amount];
+        double hostStart = seconds();
+
+        computeDeterminantHost(order, amount, &hostMatrix, hostResults);
+
+        double hostTime = seconds() - hostStart;
+
+        printf("\nResults");
+
+        for(int i = 0; i < amount; i++) {
+            printf("\nMatrix nº %d", i + 1);
+            printf("\nDeterminant on Host: %+5.3e", hostResults[i]);
+            printf("\nDeterminant on Device: %+5.3e\n", retrievedResults[i]);
         }
 
-        printf("\nEXECUTION TIMES\n");
-        printf("Host processing took <%.5f> seconds.\n", hrr);
-        printf("Device processing took <%.5f> seconds.\n", drr);
+        printf("\nHost processing time: %.5f s\n", hostTime);
+        printf("Device processing time: %.5f s\n", deviceTime);
     }
 
     return 0;
@@ -122,52 +132,85 @@ int main(int argc, char **argv)
  * @param matrix pointer to matrix
  * @param order order of matrix
  */
-void hostRR(int order, int amount, double **matrixArray, double *results)
-{
-    for(int i = 0; i < amount; i++)
-    {
-        *(results + i) = row_by_row_determinant(order, ((*matrixArray) + (i * order * order)));
-        // printf("%+5.3e\n", *(results + i));
-    }
+void computeDeterminantHost(int order, int amount, double **matrix, double *results) {
+    for (int i = 0; i < amount; i++)
+        *(results + i) = computeDeterminant(order, ((*matrix) + (i * order * order)));
 }
 
 /**
  * @brief Device kernel to calculate gaussian elimination, row by row
  *
- * @param d_matrixArray pointer to array of matrices
- * @param d_results pointer to array of results
+ * @param deviceMatrix pointer to array of matrices
+ * @param deviceResults pointer to array of results
  */
-__global__ void deviceRR(double *d_matrixArray, double *d_results)
-{
+__global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResults) {
     int n = blockDim.x;
 
-    for(int iter = 0; iter < n; iter++)
-    {
-        if(threadIdx.x < iter)
+	for (int iteration = 0; iteration < n; iteration++) {
+   
+        if (threadIdx.x < iteration) 
             continue;
 
-        int matrixIdx = blockIdx.x * n * n;
-        int row = matrixIdx + threadIdx.x * n;
-        int iterRow = matrixIdx + iter * n;
+        int matrixID = blockIdx.x * n * n;
+        int row = matrixID + threadIdx.x * n; // current row offset of this (block thread)	
+        int iterationRow = matrixID + iteration * n;
 
-        if(threadIdx.x == iter)
-        {
-            if(iter == 0)
-            {
-                *(d_results + blockIdx.x) = 1;
-            }
-            *(d_results + blockIdx.x) *= *(d_matrixArray + iterRow + iter);
+        if (threadIdx.x == iteration) {
+            if (iteration == 0)
+                deviceResults[blockIdx.x] = 1;
+
+            deviceResults[blockIdx.x] *= deviceMatrix[iterationRow + iteration];
+
             continue;
         }
 
-        double pivot = *(d_matrixArray + iterRow + iter);
+        double pivot = deviceMatrix[iterationRow + iteration];
 
-        double value = *(d_matrixArray + row + iter) / pivot;
-        for(int i = iter + 1; i < n; i++)
-        {
-            *(d_matrixArray + row + i) -= *(d_matrixArray + iterRow + i) * value;
-        }
+        double value = deviceMatrix[row + iteration] / pivot;
+
+        for (int i = iteration + 1; i < n; i++)
+            deviceMatrix[row + i] -= deviceMatrix[iterationRow + i] * value; 
+
         __syncthreads();
+    }
+}
+
+/**
+ * @brief Reads all the matrixes from a give file.
+ *
+ * @param fileName name of the file
+ * @param matrixArray pointer to array of matrices
+ * @param order order of the matrices
+ * @param amount total amount of matrices
+ */
+void readData(char *fileName, double **matrixArray, int *order, int *amount) {
+    FILE *f = fopen(fileName, "rb");
+    
+    if(!f) {
+        perror("error opening file");
+        exit(EXIT_FAILURE);
+    }
+
+    if(!fread(amount, sizeof(int), 1, f)) {
+        perror("error reading amount of matrixes");
+        exit(EXIT_FAILURE);
+    }
+
+    if(!fread(order, sizeof(int), 1, f)) {
+        perror("error reading order of matrixes");
+        exit(EXIT_FAILURE);
+    }
+
+    (*matrixArray) = (double*)malloc(sizeof(double) * (*amount) * (*order) * (*order));
+    
+    if(!(*matrixArray)) {
+        perror("error allocating memory for matrixes");
+        exit(EXIT_FAILURE);
+    }
+
+    if(!fread((*matrixArray), sizeof(double), (*amount) * (*order) * (*order), f)) {
+        perror("error reading all the matrixes");
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -182,10 +225,8 @@ __global__ void deviceRR(double *d_matrixArray, double *d_results)
  * @param fileNames Pointer to pointer array where file names are stored
  * @return int Return value of command line processing
  */
-int processCommand(int argc, char *argv[], int* fileAmount, char*** fileNames)
-{
-
-    char **auxFileNames = NULL;
+int processCommand(int argc, char *argv[], int* fileAmount, char*** fileNames) {
+     char **auxFileNames = NULL;
     int opt;    // selected option
 
     if(argc <= 2)
@@ -277,7 +318,6 @@ int processCommand(int argc, char *argv[], int* fileAmount, char*** fileNames)
     *fileNames = auxFileNames;
 
     return EXIT_SUCCESS;
-
 }
 
 /**
@@ -287,8 +327,7 @@ int processCommand(int argc, char *argv[], int* fileAmount, char*** fileNames)
  *
  *  @param cmdName string with the name of the command
  */
-static void printUsage(char *cmdName)
-{
+static void printUsage(char *cmdName) {
     fprintf (stderr,
         "\nSynopsis: %s OPTIONS [filename / positive number]\n"
         "  OPTIONS:\n"
