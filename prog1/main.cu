@@ -22,7 +22,7 @@ __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResult
 /**
  * @brief Read data from files
  */
-void readData(char *fileName, double **matrixArray, int *order, int *amount);
+void fileHandling(char *fileName, double **matrixArray, int *order, int *amount);
 
 /**
  * @brief Process the called command
@@ -43,15 +43,15 @@ static void printUsage(char *cmdName);
  */
 int main(int argc, char **argv) {
     // process command line information to obtain file names
-    int fileAmount = 0;
+    int fileCount = 0;
     char ** fileNames;
     int commandResult;
 
     // process the command and act according to it
-    commandResult = processCommand(argc, argv, &fileAmount, &fileNames);
+    commandResult = processCommand(argc, argv, &fileCount, &fileNames);
 
     if (commandResult != EXIT_SUCCESS) {
-        perror("There was an error processing the input");
+        perror("ERROR: there was an error processing the input!");
         exit(EXIT_FAILURE);
     }
 
@@ -59,16 +59,16 @@ int main(int argc, char **argv) {
     int dev = 0;
     cudaDeviceProp deviceProp;
     CHECK(cudaGetDeviceProperties(&deviceProp, dev));
-    printf("\nUsing Device %d: %s\n", dev, deviceProp.name);
+    printf("\nUsing device %d: %s\n", dev, deviceProp.name);
     CHECK(cudaSetDevice(dev));
 
     // process files
     double *hostMatrix = NULL;
     int order = 0, amount = 0;
     
-    for (int i = 0; i < fileAmount; i++) {
+    for (int i = 0; i < fileCount; i++) {
         // read data from file
-        readData(*(fileNames + i), &hostMatrix, &order, &amount);
+        fileHandling(*(fileNames + i), &hostMatrix, &order, &amount);
 
         // structure to save results
         double *retrievedResults = (double *)malloc(sizeof(double) * amount);
@@ -84,8 +84,8 @@ int main(int argc, char **argv) {
         CHECK(cudaMemcpy(deviceMatrix, hostMatrix, (sizeof(double) * order * order * amount), cudaMemcpyHostToDevice));
 
         // create grid and block
-        dim3 grid(amount, 1, 1);
-        dim3 block(order, 1, 1);
+        dim3 grid(amount); // by omission, grid(amount) <=> grid(amount, 1, 1)
+        dim3 block(order); // by omission, block(order) <=> block(order, 1, 1)
 
         // process on device
         double deviceStart = seconds();
@@ -178,35 +178,21 @@ __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResult
  * @param order matrices order
  * @param amount number of matrices
  */
-void readData(char *fileName, double **matrixArray, int *order, int *amount) {
+void fileHandling(char *fileName, double **matrixArray, int *order, int *amount) {
     FILE *f = fopen(fileName, "rb");
     
     if (!f) {
-        perror("error opening file");
+        perror("ERROR: can't open file!");
         exit(EXIT_FAILURE);
     }
 
-    if (!fread(amount, sizeof(int), 1, f)) {
-        perror("error reading amount of matrixes");
-        exit(EXIT_FAILURE);
-    }
+    fread(amount, sizeof(int), 1, f); // read matrices amount
 
-    if (!fread(order, sizeof(int), 1, f)) {
-        perror("error reading order of matrixes");
-        exit(EXIT_FAILURE);
-    }
+    fread(order, sizeof(int), 1, f); // read matrices order
 
     (*matrixArray) = (double*)malloc(sizeof(double) * (*amount) * (*order) * (*order));
-    
-    if (!(*matrixArray)) {
-        perror("error allocating memory for matrixes");
-        exit(EXIT_FAILURE);
-    }
 
-    if (!fread((*matrixArray), sizeof(double), (*amount) * (*order) * (*order), f)) {
-        perror("error reading all the matrixes");
-        exit(EXIT_FAILURE);
-    }
+    fread((*matrixArray), sizeof(double), (*amount) * (*order) * (*order), f); // read all matrices
 }
 
 /**
@@ -216,30 +202,26 @@ void readData(char *fileName, double **matrixArray, int *order, int *amount) {
  *
  * @param argc Argument quantity in the command line
  * @param argv Array with arguments fromt he command line
- * @param fileAmount Pointer to file amount
+ * @param fileCount Pointer to file amount
  * @param fileNames Pointer to pointer array where file names are stored
  * @return int Return value of command line processing
  */
-int processCommand(int argc, char *argv[], int* fileAmount, char*** fileNames) {
-     char **auxFileNames = NULL;
+int processCommand(int argc, char *argv[], int* fileCount, char*** fileNames) {
+    char **tempFilenames = NULL;
     int opt;    // selected option
 
-    if(argc <= 2)
-    {
+    if(argc <= 2) {
         perror("No/few arguments were provided.");
         printUsage(basename(strdup("PROGRAM")));
         return EXIT_FAILURE;
     }
 
     opterr = 0;
-    do
-    {
-        switch ((opt = getopt (argc, argv, "f:h")))
-        {
+    do {
+        switch ((opt = getopt (argc, argv, "f:h"))) {
             case 'f':
-            {                                                // case: file name
-                if (optarg[0] == '-')
-                {
+            {                                                
+                if (optarg[0] == '-') {
                     fprintf(stderr, "%s: file name is missing\n", basename(argv[0]));
                     printUsage(basename (argv[0]));
                     return EXIT_FAILURE;
@@ -248,47 +230,31 @@ int processCommand(int argc, char *argv[], int* fileAmount, char*** fileNames) {
                 int index = optind - 1;
                 char *next = NULL;
 
-                while(index < argc)
-                {
-                    next = argv[index++];                               // get next element in argv
+                while(index < argc) {
+                    // next arg
+                    next = argv[index++];                               
 
-                    if(next[0] != '-')                                  // if element isn't an option, then its a file name
-                    {
-                        if((*fileAmount) == 0)                          // first file name
-                        {
-                            auxFileNames = (char **)malloc(sizeof(char*) * (++(*fileAmount)));
-                            if(!auxFileNames)                           // error reallocating memory
-                            {
-                                fprintf(stderr, "error allocating memory for file name\n");
-                                return EXIT_FAILURE;
-                            }
-                            *(auxFileNames + (*fileAmount) - 1) = next;
-                        }
-                        else                                            // following file names
-                        {
-                            (*fileAmount)++;
-                            auxFileNames = (char **)realloc(auxFileNames, sizeof(char*) * (*fileAmount));
-                            if(!auxFileNames)                           // error reallocating memory
-                            {
-                                fprintf(stderr, "error reallocating memory for file name\n");
-                                return EXIT_FAILURE;
-                            }
-                            *(auxFileNames + (*fileAmount) -1) = next;
-                        }
+                    if((*fileCount) == 0) {
+                        tempFilenames = (char **)malloc(sizeof(char*) * (++(*fileCount)));
+                        *(tempFilenames + (*fileCount) - 1) = next;
+                    } else {
+                        (*fileCount)++;
+                        tempFilenames = (char **)realloc(tempFilenames, sizeof(char*) * (*fileCount));
+                        *(tempFilenames + (*fileCount) -1) = next;
                     }
-                    else                                                // element is something else
-                        break;
+
                 }
                 break;
             }
 
-            case 'h':                                                   // case: help mode
+            // help
+            case 'h':                                                   
             {
                 printUsage (basename (argv[0]));
                 return EXIT_SUCCESS;
             }
-
-            case '?':                                                   // case: invalid option
+            // invalid
+            case '?':                                                   
             {
                 fprintf(stderr, "%s: invalid option\n", basename (argv[0]));
                 printUsage(basename (argv[0]));
@@ -302,15 +268,13 @@ int processCommand(int argc, char *argv[], int* fileAmount, char*** fileNames) {
     } while (opt != -1);
 
     // print file names
-    printf("File amount: <%d>\nFile names:\n", (*fileAmount));
-    for(int i = 0; i < (*fileAmount); i++)
-    {
-        char* nome = *(auxFileNames + i);
-        printf("\tfile: <%s>\n", nome);
-    }
+    printf("File names:\n");
 
-    // copy auxiliar pointer to fileNames pointer
-    *fileNames = auxFileNames;
+    for(int i = 0; i < (*fileCount); i++)
+        printf("\tfile: <%s>\n", *(tempFilenames + i));
+
+    // save file names
+    *fileNames = tempFilenames;
 
     return EXIT_SUCCESS;
 }
