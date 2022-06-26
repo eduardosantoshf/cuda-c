@@ -10,45 +10,66 @@
  * @return double value of the determinant
  */
 double computeDeterminant(int order,  double *matrix) {
-    double determinant = 1;
+    
     double pivotElement;
+    double determinant = 1;
     int pivotColumn;
-    for (int i = 0; i < order; ++i){
-        pivotElement = matrix[ (i * order) + i]; // current diagonal element
+    int i, column, row, k, new_index;
+    bool swap = false;
+    double scale_value;
+
+    for (i = 0; i < order; ++i){
+
+        pivotElement = matrix[(i * order) + i]; 
         pivotColumn = i;
-        // partial pivoting, which should select
-        // the entry with largest absolute value from the column of the matrix
-        // that is currently being considered as the pivot element
-        for (int column = i + 1; column < order; ++column) {
-            if (fabs(matrix[(i * order) + column]) > fabs(pivotElement)) {
-                // update the value of the pivot and pivot column index
-                pivotElement = matrix[(i * order) + column];
+
+        // select the largest pivot of the current pivot column
+        for (column = i + 1; column < order; ++column) {
+            new_index = (i * order) + column;
+            
+            // if greater than current value, update pivot
+            if (fabs(matrix[new_index]) > fabs(pivotElement)) {
+                pivotElement = matrix[new_index];
                 pivotColumn = column;
             }
         }
 
-        //if the diagonal element is zero then the determinant will be zeero
+        // det = 0
         if (pivotElement == 0.0)
             return 0.0;
 
-        if (pivotColumn != i) { // if the pivotELement is not in the current column, then we perform a swap in the rows
-            for (int k = 0; k < order; k++) {
+        // if another column was selected as pivot
+        if (pivotColumn != i) { 
+            swap = true;
+
+            // swap 
+            for (k = 0; k < order; k++) {
                 double temp;
                 temp = matrix[(k * order) + i];
                 matrix[(k * order) + i] = matrix[(k * order) + pivotColumn];
                 matrix[(k * order) + pivotColumn] = temp;
             }
-
-            determinant *= -1.0; //signal the row swapping
+            
         }
 
-        determinant *= pivotElement; //update the determinant with the the diagonal value of the current row
+        //if there was a swap
+        if(swap){
+            swap = false;
+            determinant *= -1.0; 
+        }
 
-        for (int column = i + 1; column < order; ++column) { /* reduce the matrix to a  Base Triangle Matrix */
-        // as the current row and column "i" will no longer be used, we may start reducing on the next
-        // column/row (i+1)
-            for (int row = i + 1; row < order; ++row)
-                matrix[(row * order) + column] -= matrix[(row * order) + i] * matrix[(i * order) + column] / pivotElement;  //reduce the value
+        // update final determinant
+        determinant *= pivotElement; 
+
+        // reduce to a base triangle matrix
+        for (column = i + 1; column < order; ++column) {
+            
+            // scale to multiply the elements
+            scale_value = matrix[(i * order) + column] / pivotElement;
+
+            // reduce the matrix values (ignoring the previously used column and row)
+            for (row = i + 1; row < order; ++row)
+                matrix[(row * order) + column] -= scale_value * matrix[(row * order) + i];  
         }
     }
 
