@@ -260,7 +260,7 @@ void fileHandling(char *fileName, double **matrixArray, int *order, int *amount)
  * @return int Return value of command line processing
  */
 int processCommand(int argc, char *argv[], int* file_count, char*** file_names) {
-     char **temp_filenames = NULL;
+    char **temp_filenames = NULL;
     int opt;    // selected option
 
     if(argc <= 2)
@@ -332,7 +332,7 @@ int processCommand(int argc, char *argv[], int* file_count, char*** file_names) 
     printf("File names:\n");
 
     for(int i = 0; i < (*file_count); i++) {
-        printf("\tfile: <%s>\n", *(temp_filenames + i));
+        printf("\t%s\n", *(temp_filenames + i));
     }
 
     // save file names
