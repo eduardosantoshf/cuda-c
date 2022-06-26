@@ -140,19 +140,19 @@ void computeDeterminantHost(int order, int amount, double **matrix, double *resu
  * @param deviceResults results array
  */
 __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResults) {
-    int n = blockDim.x;
+    int n = blockDim.x; // order of a matrix (= size of the block, because a block is a matrix)
 
 	for (int iteration = 0; iteration < n; iteration++) {
         if (threadIdx.x < iteration) 
             continue;
 
-        int matrixID = blockIdx.x * n * n;
+        int matrixID = blockIdx.x * n * n; // jump to the current matrix 
         int row = matrixID + threadIdx.x * n; // current row offset of this (block thread)	
-        int iterationRow = matrixID + iteration * n;
+        int iterationRow = matrixID + iteration * n; // current iteration
 
-        if (threadIdx.x == iteration) {
+        if (threadIdx.x == iteration) { // thread does the partial pivoting, updating the determinant value of the matrix
             if (iteration == 0)
-                deviceResults[blockIdx.x] = 1;
+                deviceResults[blockIdx.x] = 1; // initialize the results
 
             deviceResults[blockIdx.x] *= deviceMatrix[iterationRow + iteration];
 
