@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
 
         double hostTime = seconds() - hostStart;
 
-        printf("\nResults:\n");
+        printf("\nRResults:\n");
 
         for(int i = 0; i < amount; i++) {
             printf("\nMatrix nº %d", i + 1);
@@ -140,58 +140,74 @@ void computeDeterminantHost(int order, int amount, double **matrix, double *resu
  * @param deviceResults results array
  */
 __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResults) {
+    int pivotCol;
+    int iter, col, k, row;
+    double temp_value;
+    bool swap = false;
     int order = blockDim.x;
     int matrixIdx = blockIdx.x * order * order;
     int tColumn = threadIdx.x + matrixIdx;
-    int pivotColumn;
+    int iterColumn;
+    double pivot;
+    
+    
 
-    for (int iteration = 0; iteration < order; iteration++) {
-        if (threadIdx.x < iteration)
-            return;
+    for (iter = 0; iter < order; iter++) {
 
-        int iterColumn = iteration + matrixIdx;
-        double pivot = deviceMatrix[iterColumn + iteration * order];
-        pivotColumn = iterColumn;
+        iterColumn = iter + matrixIdx;
+        pivotCol = iterColumn;
+        pivot = deviceMatrix[iterColumn + iter * order];
+        
 
-        if (threadIdx.x == iteration) {
-            for (int col = iterColumn + 1; col < ( matrixIdx + order); ++col) {
-                if (fabs(deviceMatrix[(iteration * order) + col]) > fabs(pivot)) {
-                    // update the value of the pivot and pivot col index
-                    pivot = deviceMatrix[(iteration * order) + col];
-                    pivotColumn = col;
+        if (threadIdx.x == iter) {
+            for (col = iterColumn + 1; col < (matrixIdx + order); ++col) {
+                int new_index = (iter * order) + col;
+
+                if (fabs(deviceMatrix[new_index]) > fabs(pivot)) {
+                    pivot = deviceMatrix[new_index];
+                    pivotCol = col;
 
 	      	    }
             }
 
-            if (iteration == 0)
+            if (iter == 0)
                 deviceResults[blockIdx.x] = 1;
 
-            if (pivotColumn != iterColumn) {
-                for (int k = 0; k < order; k++) {
-                    double temp;
-                    temp = deviceMatrix[(k * order) + iterColumn];
-                    deviceMatrix[(k * order) + iterColumn] = deviceMatrix[(k * order) + pivotColumn];
-                    deviceMatrix[(k * order) + pivotColumn] = temp;
-                }
+            if (pivotCol != iterColumn) {
+                swap = true;
 
-                deviceResults[blockIdx.x] *= -1.0; // signal the row swapping
+                // swap columns
+                for (k = 0; k < order; k++) {
+                    temp_value = deviceMatrix[(k * order) + iterColumn];
+                    deviceMatrix[(k * order) + iterColumn] = deviceMatrix[(k * order) + pivotCol];
+                    deviceMatrix[(k * order) + pivotCol] = temp_value;   
+                }
             }
-                deviceResults[blockIdx.x] *= pivot;
+
+            if (swap){
+                deviceResults[blockIdx.x] *= -1.0; // signal the row swapping
+                swap = false;
+            }
+            
+            deviceResults[blockIdx.x] *= pivot;
 
             return;
         }
         __syncthreads();
 	    
-        iterColumn = iteration + matrixIdx;
-        pivot = deviceMatrix[iterColumn + iteration * order];
-        pivotColumn = iterColumn;
+        iterColumn = iter + matrixIdx;
+        pivot = deviceMatrix[iterColumn + iter * order];
+        pivotCol = iterColumn;
 
-        double const_val = deviceMatrix[tColumn + order * iteration] / pivot;
+        double const_val = deviceMatrix[tColumn + order * iter] / pivot;
 
-        for (int row = iteration + 1; row < order; row++)
-            deviceMatrix[tColumn + order * row] -= deviceMatrix[pivotColumn + order * row] * const_val;
+        for (row = iter + 1; row < order; row++)
+            deviceMatrix[tColumn + order * row] -= deviceMatrix[pivotCol + order * row] * const_val;
 
         __syncthreads();
+
+        if (threadIdx.x < iter)
+            return;
     }
 }
 
