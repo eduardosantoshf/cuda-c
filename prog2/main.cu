@@ -153,15 +153,23 @@ __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResult
 
     for (iter = 0; iter < order; iter++) {
 
-        iterCol = iter + matrixIdx;
+        iterCol = iter + matrixIdx; // current iteration
+
         pivotCol = iterCol;
         pivot = deviceMatrix[iterCol + iter * order];
         
-
+        // each thread only deals with one partial pivot
         if (threadIdx.x == iter) {
+            
+            // initialize 
+            if (iter == 0)
+                deviceResults[blockIdx.x] = 1;
+
+            // select the largest pivot of the current pivot column
             for (col = iterCol + 1; col < (matrixIdx + order); ++col) {
                 new_index = (iter * order) + col;
 
+                // if greater than current value, update pivot
                 if (fabs(deviceMatrix[new_index]) > fabs(pivot)) {
                     pivot = deviceMatrix[new_index];
                     pivotCol = col;
@@ -169,9 +177,7 @@ __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResult
 	      	    }
             }
 
-            if (iter == 0)
-                deviceResults[blockIdx.x] = 1;
-
+            // if another pivot was selected
             if (pivotCol != iterCol) {
                 swap = true;
 
@@ -183,11 +189,13 @@ __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResult
                 }
             }
 
+            // if there was a swap
             if (swap){
-                deviceResults[blockIdx.x] *= -1.0; // signal the row swapping
+                deviceResults[blockIdx.x] *= -1.0; 
                 swap = false;
             }
             
+            // update final determinant
             deviceResults[blockIdx.x] *= pivot;
 
             return;
@@ -200,11 +208,13 @@ __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResult
 
         scale_val = deviceMatrix[(threadIdx.x + matrixIdx) + order * iter] / pivot;
 
+        // reduce to a base triangle matrix
         for (row = iter + 1; row < order; row++)
             deviceMatrix[(threadIdx.x + matrixIdx) + order * row] -= scale_val * deviceMatrix[pivotCol + order * row];
 
         __syncthreads();
 
+        // not the right iteration for this thread
         if (threadIdx.x < iter)
             return;
     }
