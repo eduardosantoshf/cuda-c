@@ -141,27 +141,26 @@ void computeDeterminantHost(int order, int amount, double **matrix, double *resu
  */
 __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResults) {
     int pivotCol;
-    int iter, col, k, row;
-    double temp_value;
+    int iter, col, k, row, new_index;
+    double temp_value, scale_val;
     bool swap = false;
     int order = blockDim.x;
     int matrixIdx = blockIdx.x * order * order;
-    int tColumn = threadIdx.x + matrixIdx;
-    int iterColumn;
+    int iterCol;
     double pivot;
     
     
 
     for (iter = 0; iter < order; iter++) {
 
-        iterColumn = iter + matrixIdx;
-        pivotCol = iterColumn;
-        pivot = deviceMatrix[iterColumn + iter * order];
+        iterCol = iter + matrixIdx;
+        pivotCol = iterCol;
+        pivot = deviceMatrix[iterCol + iter * order];
         
 
         if (threadIdx.x == iter) {
-            for (col = iterColumn + 1; col < (matrixIdx + order); ++col) {
-                int new_index = (iter * order) + col;
+            for (col = iterCol + 1; col < (matrixIdx + order); ++col) {
+                new_index = (iter * order) + col;
 
                 if (fabs(deviceMatrix[new_index]) > fabs(pivot)) {
                     pivot = deviceMatrix[new_index];
@@ -173,13 +172,13 @@ __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResult
             if (iter == 0)
                 deviceResults[blockIdx.x] = 1;
 
-            if (pivotCol != iterColumn) {
+            if (pivotCol != iterCol) {
                 swap = true;
 
                 // swap columns
                 for (k = 0; k < order; k++) {
-                    temp_value = deviceMatrix[(k * order) + iterColumn];
-                    deviceMatrix[(k * order) + iterColumn] = deviceMatrix[(k * order) + pivotCol];
+                    temp_value = deviceMatrix[(k * order) + iterCol];
+                    deviceMatrix[(k * order) + iterCol] = deviceMatrix[(k * order) + pivotCol];
                     deviceMatrix[(k * order) + pivotCol] = temp_value;   
                 }
             }
@@ -195,14 +194,14 @@ __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResult
         }
         __syncthreads();
 	    
-        iterColumn = iter + matrixIdx;
-        pivot = deviceMatrix[iterColumn + iter * order];
-        pivotCol = iterColumn;
+        iterCol = iter + matrixIdx;
+        pivot = deviceMatrix[iterCol + iter * order];
+        pivotCol = iterCol;
 
-        double const_val = deviceMatrix[tColumn + order * iter] / pivot;
+        scale_val = deviceMatrix[(threadIdx.x + matrixIdx) + order * iter] / pivot;
 
         for (row = iter + 1; row < order; row++)
-            deviceMatrix[tColumn + order * row] -= deviceMatrix[pivotCol + order * row] * const_val;
+            deviceMatrix[(threadIdx.x + matrixIdx) + order * row] -= scale_val * deviceMatrix[pivotCol + order * row];
 
         __syncthreads();
 
