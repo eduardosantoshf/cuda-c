@@ -9,14 +9,6 @@
 #include "../common/common.h"
 #include "computeDeterminant.cuh"
 
-#ifndef SECTOR_SIZE
-# define SECTOR_SIZE  512
-#endif
-
-#ifndef N_SECTORS
-# define N_SECTORS    (1 << 21)
-#endif
-
 /**
  * @brief Host processing logic
  */
@@ -131,7 +123,7 @@ int main(int argc, char **argv) {
 }
 
 /**
- * @brief Computes the determinant row by row on the host
+ * @brief Computes the determinant column by column on the host
  *
  * @param matrix pointer to matrix
  * @param order order of matrix
@@ -142,37 +134,62 @@ void computeDeterminantHost(int order, int amount, double **matrix, double *resu
 }
 
 /**
- * @brief Computes the determinant row by row on the GPU
+ * @brief Computes the determinant column by column on the GPU
  *
  * @param deviceMatrix matrices array
  * @param deviceResults results array
  */
 __global__ void computeDeterminantGPU(double *deviceMatrix, double *deviceResults) {
-    int n = blockDim.x;
+    int order = blockDim.x;
+    int matrixIdx = blockIdx.x * order * order;
+    int tColumn = threadIdx.x + matrixIdx;
+    int pivotColumn;
 
-	for (int iteration = 0; iteration < n; iteration++) {
-        if (threadIdx.x < iteration) 
-            continue;
+    for (int iteration = 0; iteration < order; iteration++) {
+        if (threadIdx.x < iteration)
+            return;
 
-        int matrixID = blockIdx.x * n * n;
-        int row = matrixID + threadIdx.x * n; // current row offset of this (block thread)	
-        int iterationRow = matrixID + iteration * n;
+        int iterColumn = iteration + matrixIdx;
+        double pivot = deviceMatrix[iterColumn + iteration * order];
+        pivotColumn = iterColumn;
 
         if (threadIdx.x == iteration) {
+            for (int col = iterColumn + 1; col < ( matrixIdx + order); ++col) {
+                if (fabs(deviceMatrix[(iteration * order) + col]) > fabs(pivot)) {
+                    // update the value of the pivot and pivot col index
+                    pivot = deviceMatrix[(iteration * order) + col];
+                    pivotColumn = col;
+
+	      	    }
+            }
+
             if (iteration == 0)
                 deviceResults[blockIdx.x] = 1;
 
-            deviceResults[blockIdx.x] *= deviceMatrix[iterationRow + iteration];
+            if (pivotColumn != iterColumn) {
+                for (int k = 0; k < order; k++) {
+                    double temp;
+                    temp = deviceMatrix[(k * order) + iterColumn];
+                    deviceMatrix[(k * order) + iterColumn] = deviceMatrix[(k * order) + pivotColumn];
+                    deviceMatrix[(k * order) + pivotColumn] = temp;
+                }
 
-            continue;
+                deviceResults[blockIdx.x] *= -1.0; // signal the row swapping
+            }
+                deviceResults[blockIdx.x] *= pivot;
+
+            return;
         }
+        __syncthreads();
+	    
+        iterColumn = iteration + matrixIdx;
+        pivot = deviceMatrix[iterColumn + iteration * order];
+        pivotColumn = iterColumn;
 
-        double pivot = deviceMatrix[iterationRow + iteration];
+        double const_val = deviceMatrix[tColumn + order * iteration] / pivot;
 
-        double value = deviceMatrix[row + iteration] / pivot;
-
-        for (int i = iteration + 1; i < n; i++)
-            deviceMatrix[row + i] -= deviceMatrix[iterationRow + i] * value; 
+        for (int row = iteration + 1; row < order; row++)
+            deviceMatrix[tColumn + order * row] -= deviceMatrix[pivotColumn + order * row] * const_val;
 
         __syncthreads();
     }
