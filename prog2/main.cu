@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <libgen.h>
 
-#include "../common/common.h"
+#include "common.h"
 #include "computeDeterminant.cuh"
 
 /**
