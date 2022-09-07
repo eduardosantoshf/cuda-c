@@ -1,6 +1,6 @@
 # CLE Third Assignment
 
-The objective of this project was to take the second general problem, which have been discussed in the lab classes and for which we have developed both a multithreaded and a multiprocess solution. The aim now was to convert it into a CUDA program to be run in a GPU under Linux.
+The objective of this project was to take the second general problem, which have been discussed in the lab classes and for which we have developed both a multithreaded and a multiprocess solution. The aim now was to convert it into a CUDA program to be ran in a GPU under Linux.
 
 ## Course
 This labs were developed under the [Large Scale Computing](https://www.ua.pt/en/uc/13638) course of [University of Aveiro](https://www.ua.pt/).
